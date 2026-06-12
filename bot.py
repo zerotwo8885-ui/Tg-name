@@ -3,6 +3,7 @@ import logging
 from dotenv import load_dotenv
 from telegram import Update
 from telegram.ext import ApplicationBuilder, ContextTypes, CommandHandler, MessageHandler, filters
+from telegram.error import BadRequest, TelegramError
 from openai import AsyncOpenAI
 
 # Load environment variables
@@ -34,6 +35,8 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
 )
+
+logger = logging.getLogger(__name__)
 
 # Initialize OpenAI client
 client = None
@@ -87,41 +90,57 @@ Context:
 - Reply only when directly tagged (@BotName) or when someone clearly asks you something.
 """
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def safe_reply(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str) -> bool:
+    """
+    Safely reply to a message. Falls back to send_message if reply fails.
+    Returns True if successful, False otherwise.
+    """
     try:
-        await update.message.reply_text(f"Arre bhai! Main aa gaya. Kya haal chaal? Main hoon {BOT_NAME}, tumhara dost. @ me karke kuch bhi pucho!")
-    except Exception as e:
-        logging.error(f"Error in start handler: {e}")
-        try:
-            # Fallback: send message without replying if message is deleted
-            await context.bot.send_message(
-                chat_id=update.effective_chat.id,
-                text=f"Arre bhai! Main aa gaya. Kya haal chaal? Main hoon {BOT_NAME}, tumhara dost. @ me karke kuch bhi pucho!"
-            )
-        except Exception as e2:
-            logging.error(f"Error sending fallback message in start: {e2}")
+        await update.message.reply_text(text)
+        return True
+    except BadRequest as e:
+        if "Message to be replied not found" in str(e) or "message not found" in str(e).lower():
+            try:
+                await context.bot.send_message(
+                    chat_id=update.effective_chat.id,
+                    text=text
+                )
+                return True
+            except TelegramError as e2:
+                logger.error(f"Fallback send_message also failed: {e2}")
+                return False
+        else:
+            logger.error(f"BadRequest error: {e}")
+            raise
+    except TelegramError as e:
+        logger.error(f"Telegram error in safe_reply: {e}")
+        return False
 
-async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
-    logging.error(f"Exception while handling an update: {context.error}")
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    start_message = f"Arre bhai! Main aa gaya. Kya haal chaal? Main hoon {BOT_NAME}, tumhara dost. @ me karke kuch bhi pucho!"
+    await safe_reply(update, context, start_message)
+
+async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    logger.error(f"Exception while handling an update: {context.error}")
     
-    # Only attempt to send a message if we have valid update and message
-    if isinstance(update, Update) and update.message and update.effective_chat:
-        try:
-            await context.bot.send_message(
-                chat_id=update.effective_chat.id,
-                text="Kuch toh gadbad ho gayi hai bhai! Phir se try kar."
-            )
-        except Exception as e:
-            # Silently log - don't raise or try to reply again
-            logging.error(f"Could not send error message to user: {e}")
+    try:
+        if update and update.message:
+            await update.message.reply_text("Kuch toh gadbad ho gayi hai bhai! Phir se try kar.")
+    except Exception:
+        pass  # Log but don't raise
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message or not update.message.text:
         return
 
     message_text = update.message.text
-    bot_user = await context.bot.get_me()
-    bot_username = bot_user.username
+    
+    try:
+        bot_user = await context.bot.get_me()
+        bot_username = bot_user.username
+    except TelegramError as e:
+        logger.error(f"Error getting bot info: {e}")
+        return
 
     # Check if mentioned or addressed
     is_private = update.message.chat.type == 'private'
@@ -130,15 +149,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if is_private or is_mentioned or is_addressed:
         if not client:
-            try:
-                await update.message.reply_text("Bhai, OpenAI API key nahi mili. Admin ko bolo check kare!")
-            except Exception as e:
-                logging.error(f"Error sending API key error message: {e}")
+            await safe_reply(update, context, "Bhai, OpenAI API key nahi mili. Admin ko bolo check kare!")
             return
 
         # Remove bot mention from text to not confuse LLM
         clean_text = message_text.replace(f"@{bot_username}", "").strip()
-        user_name = update.message.from_user.first_name
+        user_name = update.message.from_user.first_name or "Bhai"
 
         try:
             response = await client.chat.completions.create(
@@ -150,39 +166,20 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 max_tokens=150
             )
             reply = response.choices[0].message.content
-            try:
-                await update.message.reply_text(reply)
-            except Exception as e:
-                # Fallback: send without replying if message is deleted
-                logging.error(f"Could not reply to message: {e}, sending direct message instead")
-                try:
-                    await context.bot.send_message(
-                        chat_id=update.effective_chat.id,
-                        text=reply
-                    )
-                except Exception as e2:
-                    logging.error(f"Could not send message: {e2}")
+            await safe_reply(update, context, reply)
+            
         except Exception as e:
-            logging.error(f"Error calling OpenAI: {e}")
+            logger.error(f"Error calling OpenAI: {e}")
             error_msg = str(e).lower()
-            if "401" in error_msg:
+            
+            if "401" in error_msg or "invalid" in error_msg:
                 user_feedback = "Bhai, API key galat hai shayad. Admin ko bolo check kare!"
-            elif "429" in error_msg:
+            elif "429" in error_msg or "rate" in error_msg:
                 user_feedback = "Arre yaar, thoda slow! Bahut zyada messages ho gaye hain. Thoda ruk ja."
             else:
                 user_feedback = "Arre yaar, dimag thoda garam ho gaya hai (API error). Thodi der baad try kar!"
             
-            try:
-                await update.message.reply_text(user_feedback)
-            except Exception as e2:
-                # Fallback: send without replying
-                try:
-                    await context.bot.send_message(
-                        chat_id=update.effective_chat.id,
-                        text=user_feedback
-                    )
-                except Exception as e3:
-                    logging.error(f"Could not send error feedback: {e3}")
+            await safe_reply(update, context, user_feedback)
 
 if __name__ == '__main__':
     if not TELEGRAM_BOT_TOKEN:
