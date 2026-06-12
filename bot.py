@@ -11,6 +11,7 @@ load_dotenv()
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL")
+OPENAI_MODEL_NAME = os.getenv("OPENAI_MODEL_NAME", "gpt-3.5-turbo")
 BOT_USERNAME = os.getenv("BOT_USERNAME", "ChotuBhaiBot")
 BOT_NAME = os.getenv("BOT_NAME", "Chotu Bhai")
 
@@ -104,7 +105,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         try:
             response = await client.chat.completions.create(
-                model="gpt-3.5-turbo",
+                model=OPENAI_MODEL_NAME,
                 messages=[
                     {"role": "system", "content": SYSTEM_PROMPT},
                     {"role": "user", "content": f"User's name: {user_name}\nMessage: {clean_text}"}
