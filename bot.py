@@ -10,6 +10,7 @@ load_dotenv()
 
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL")
 BOT_USERNAME = os.getenv("BOT_USERNAME", "ChotuBhaiBot")
 BOT_NAME = os.getenv("BOT_NAME", "Chotu Bhai")
 
@@ -22,7 +23,10 @@ logging.basicConfig(
 # Initialize OpenAI client
 client = None
 if OPENAI_API_KEY:
-    client = AsyncOpenAI(api_key=OPENAI_API_KEY)
+    client = AsyncOpenAI(
+        api_key=OPENAI_API_KEY,
+        base_url=OPENAI_BASE_URL
+    )
 
 SYSTEM_PROMPT = f"""
 You are a friendly, fun, and helpful Telegram group member named "{BOT_NAME}".
@@ -111,7 +115,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(reply)
         except Exception as e:
             logging.error(f"Error calling OpenAI: {e}")
-            await update.message.reply_text("Arre yaar, dimag thoda garam ho gaya hai (API error). Thodi der baad try kar!")
+            error_msg = str(e).lower()
+            if "401" in error_msg:
+                user_feedback = "Bhai, API key galat hai shayad. Admin ko bolo check kare!"
+            elif "429" in error_msg:
+                user_feedback = "Arre yaar, thoda slow! Bahut zyada messages ho gaye hain. Thoda ruk ja."
+            else:
+                user_feedback = "Arre yaar, dimag thoda garam ho gaya hai (API error). Thodi der baad try kar!"
+            await update.message.reply_text(user_feedback)
 
 if __name__ == '__main__':
     if not TELEGRAM_BOT_TOKEN:
