@@ -10,8 +10,22 @@ load_dotenv()
 
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL")
-OPENAI_MODEL_NAME = os.getenv("OPENAI_MODEL_NAME", "gpt-3.5-turbo")
+OPENAI_MODEL_NAME = os.getenv("OPENAI_MODEL_NAME")
+
+# Explicit Groq support: if GROQ_API_KEY is provided, set defaults
+if GROQ_API_KEY:
+    if not OPENAI_API_KEY:
+        OPENAI_API_KEY = GROQ_API_KEY
+    if not OPENAI_BASE_URL:
+        OPENAI_BASE_URL = "https://api.groq.com/openai/v1"
+    if not OPENAI_MODEL_NAME:
+        OPENAI_MODEL_NAME = "llama-3.3-70b-versatile"
+
+# Final defaults if still not set
+if not OPENAI_MODEL_NAME:
+    OPENAI_MODEL_NAME = "gpt-3.5-turbo"
 BOT_USERNAME = os.getenv("BOT_USERNAME", "ChotuBhaiBot")
 BOT_NAME = os.getenv("BOT_NAME", "Chotu Bhai")
 
@@ -128,8 +142,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 if __name__ == '__main__':
     if not TELEGRAM_BOT_TOKEN:
         print("Error: TELEGRAM_BOT_TOKEN not found in environment variables.")
-    elif not OPENAI_API_KEY:
-        print("Error: OPENAI_API_KEY not found in environment variables.")
+    elif not OPENAI_API_KEY and not GROQ_API_KEY:
+        print("Error: OPENAI_API_KEY or GROQ_API_KEY not found in environment variables.")
     else:
         application = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).build()
 
