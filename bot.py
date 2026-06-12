@@ -11,6 +11,7 @@ load_dotenv()
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 BOT_USERNAME = os.getenv("BOT_USERNAME", "ChotuBhaiBot")
+BOT_NAME = os.getenv("BOT_NAME", "Chotu Bhai")
 
 # Enable logging
 logging.basicConfig(
@@ -23,8 +24,8 @@ client = None
 if OPENAI_API_KEY:
     client = AsyncOpenAI(api_key=OPENAI_API_KEY)
 
-SYSTEM_PROMPT = """
-You are a friendly, fun, and helpful Telegram group member named "Chotu Bhai".
+SYSTEM_PROMPT = f"""
+You are a friendly, fun, and helpful Telegram group member named "{BOT_NAME}".
 
 Your Personality:
 - You talk in Hinglish (Hindi + English mix) — casual aur desi style me.
@@ -68,7 +69,7 @@ Context:
 """
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Arre bhai! Main aa gaya. Kya haal chaal? Main hoon Chotu Bhai, tumhara dost. @ me karke kuch bhi pucho!")
+    await update.message.reply_text(f"Arre bhai! Main aa gaya. Kya haal chaal? Main hoon {BOT_NAME}, tumhara dost. @ me karke kuch bhi pucho!")
 
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
     logging.error(f"Exception while handling an update: {context.error}")
@@ -86,7 +87,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Check if mentioned or addressed
     is_private = update.message.chat.type == 'private'
     is_mentioned = f"@{bot_username}" in message_text
-    is_addressed = "chotu bhai" in message_text.lower()
+    is_addressed = BOT_NAME.lower() in message_text.lower()
 
     if is_private or is_mentioned or is_addressed:
         if not client:
@@ -115,6 +116,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 if __name__ == '__main__':
     if not TELEGRAM_BOT_TOKEN:
         print("Error: TELEGRAM_BOT_TOKEN not found in environment variables.")
+    elif not OPENAI_API_KEY:
+        print("Error: OPENAI_API_KEY not found in environment variables.")
     else:
         application = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).build()
 
